@@ -1,0 +1,15 @@
+# Never commit match data or derived frame-level exports (terms of use).
+data/
+tactical/
+cache/
+submissions/
+*.mp4
+*.txt
+!requirements.txt
+*.npz
+*.pkl
+*.csv
+*.xml
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
