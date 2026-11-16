@@ -96,6 +96,11 @@ At inference, "controlled" possession is enforced by the decoder: a change of te
 supported by enough frames of evidence to pay λ_team, so a single touch, a deflection or a lost
 aerial duel does not flip possession.
 
+Match timeline (published by the organisers, not learned): frames outside the two graded halves
+are `X`; the second half is graded from frame 110,808 but kicks off at 113,742 (FAQ.md), so those
+2,934 frames are `D` and the decoder starts the half at the kickoff. Without this, players walking
+out before the restart produced ~11 spurious possessions.
+
 ## 5. Results
 
 **Leave-one-game-out on Metrica** (`python evaluate_metrica.py`; organisers' `possession_metrics.py`,

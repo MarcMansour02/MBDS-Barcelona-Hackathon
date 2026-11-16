@@ -6,7 +6,7 @@ import itertools
 
 import numpy as np
 
-from . import data, docs_degrade, model
+from . import D, data, docs_degrade, model
 
 METRICA_GAMES = (1, 2, 3)
 # Switching costs of the decoder, chosen by leave-one-game-out on degraded Metrica
@@ -80,10 +80,23 @@ def train_final(sets):
     return model.fit(list(sets.values()))
 
 
+# Organisers' FAQ.md ("Which frames are actually graded?"): the second half is graded from video
+# frame 110,808 but kicks off at 113,742; "those 2,934 frames are graded and all of them are D".
+# The first half is graded from its kickoff. Published fact about the match timeline, not learned.
+PRE_KICKOFF_DEAD = {"BAR-ATH": [(110808, 113741)]}
+
+
 def predict_challenge(clf, lam_team=LAM_TEAM, lam_dead=LAM_DEAD):
-    """Labels for all 199,319 frames of the challenge match (X outside the two halves)."""
+    """Labels for all 199,319 frames of the challenge match (X outside the two halves, D on graded
+    frames before a kickoff, as published by the organisers)."""
     match = data.load_challenge()
     s = prepare(match)
     proba = model.predict_proba(clf, s["F"], s["F_swap"])
-    labels = model.decode(proba, match["period"], lam_team, lam_dead)
+    period = match["period"].copy()
+    dead = np.zeros(len(period), bool)
+    for first, last in PRE_KICKOFF_DEAD.get(match["name"], []):
+        dead[first:last + 1] = True
+    period[dead] = 0                                  # decode each half from its kickoff
+    labels = model.decode(proba, period, lam_team, lam_dead)
+    labels[dead] = D
     return labels, proba, match

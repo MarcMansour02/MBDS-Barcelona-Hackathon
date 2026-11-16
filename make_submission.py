@@ -31,7 +31,8 @@ def main():
     print("model trained on Metrica games %s" % (pipeline.METRICA_GAMES,), flush=True)
     labels, _, _ = pipeline.predict_challenge(clf)
     path = model.write_submission(os.path.join(args.out, "%s.csv" % args.team), labels)
-    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    with open(path, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
     print("wrote %s\nsha256 %s" % (path, digest))
 
     validator = os.path.join(paths.ORGANISERS, "evaluation", "validate_submission.py")
