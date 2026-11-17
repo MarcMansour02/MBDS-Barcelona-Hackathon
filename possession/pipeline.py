@@ -9,10 +9,13 @@ import numpy as np
 from . import D, data, docs_degrade, model
 
 METRICA_GAMES = (1, 2, 3)
-# Switching costs of the decoder, chosen by leave-one-game-out on degraded Metrica
-# (evaluate_metrica.py prints the grid). The score surface is flat around them.
+# Switching costs of the decoder, chosen by leave-one-game-out on degraded Metrica for the tree-only
+# system and kept for the submitted one (evaluate_metrica.py prints the grid; it is flat around them).
 LAM_TEAM = 15.0
 LAM_DEAD = 50.0
+# Frame probabilities = mean of the tree classifier and the sequence model (possession/sequence.py,
+# N_SEEDS networks averaged). Same decoder costs.
+N_SEEDS = 3
 
 # Degraded copies of every Metrica game (possession/docs_degrade.py, DATA.md figures only).
 # DATA.md says the ball is missing on 41% of graded frames but not where, so three copies span it:
@@ -46,18 +49,34 @@ def metrica_sets(games=METRICA_GAMES, verbose=True):
     return sets
 
 
-def cross_validate(sets, games=METRICA_GAMES, verbose=True):
-    """Leave-one-game-out probabilities: {(game, kind): [n, 3]}."""
-    oof = {}
+def train_sequence(train_sets, n_seeds=N_SEEDS, verbose=True):
+    """N_SEEDS sequence models (seeds 0..N_SEEDS-1) on the same training sets as the trees."""
+    from . import sequence
+    log = (lambda m: print(m, flush=True)) if verbose else None
+    return [sequence.train(train_sets, seed=k, log=log) for k in range(n_seeds)]
+
+
+def sequence_proba(seq_models, s):
+    from . import sequence
+    return np.mean([sequence.predict_proba(n, sc, s["F"], s["F_swap"], s["period"]) for n, sc in seq_models], 0)
+
+
+def cross_validate(sets, games=METRICA_GAMES, verbose=True, with_sequence=True):
+    """Leave-one-game-out probabilities: {(game, kind): [n, 3]} for the trees, and (if
+    with_sequence) the same for the sequence models."""
+    oof, oof_seq = {}, {}
     for g in games:
         train = [sets[(k, kind)] for k in games if k != g for kind in KINDS]
         clf = model.fit(train)
+        seq_models = train_sequence(train, verbose=verbose) if with_sequence else None
         for kind in KINDS:
             s = sets[(g, kind)]
             oof[(g, kind)] = model.predict_proba(clf, s["F"], s["F_swap"])
+            if with_sequence:
+                oof_seq[(g, kind)] = sequence_proba(seq_models, s)
         if verbose:
             print("fold: held out game %d" % g, flush=True)
-    return oof
+    return (oof, oof_seq) if with_sequence else oof
 
 
 def tune_decoder(sets, oof, games=METRICA_GAMES, lam_team=(8, 11, 15, 20),
@@ -86,12 +105,15 @@ def train_final(sets):
 PRE_KICKOFF_DEAD = {"BAR-ATH": [(110808, 113741)]}
 
 
-def predict_challenge(clf, lam_team=LAM_TEAM, lam_dead=LAM_DEAD):
+def predict_challenge(clf, seq_models=None, lam_team=LAM_TEAM, lam_dead=LAM_DEAD):
     """Labels for all 199,319 frames of the challenge match (X outside the two halves, D on graded
-    frames before a kickoff, as published by the organisers)."""
+    frames before a kickoff, as published by the organisers). With seq_models, the frame
+    probabilities are the mean of the trees and the sequence models."""
     match = data.load_challenge()
     s = prepare(match)
     proba = model.predict_proba(clf, s["F"], s["F_swap"])
+    if seq_models:
+        proba = (proba + sequence_proba(seq_models, s)) / 2
     period = match["period"].copy()
     dead = np.zeros(len(period), bool)
     for first, last in PRE_KICKOFF_DEAD.get(match["name"], []):

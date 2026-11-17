@@ -3,10 +3,11 @@
 Leave-one-game-out on Metrica sample games 1-3: train on two games (clean + three degraded copies,
 both team orientations), predict the third, score with the organisers' possession_metrics.py.
 Reports, per kind of test copy: the organisers' baseline (nearest player + majority vote over 50
-frames, re-implemented on our features), our frame classifier alone (argmax), and the submitted
-system (classifier + Viterbi decoder with LAM_TEAM / LAM_DEAD), then the decoder-cost grid.
+frames, re-implemented on our features), the tree classifier alone (argmax), trees + decoder,
+the sequence models + decoder, and the submitted system (mean of trees and sequence models +
+Viterbi decoder with LAM_TEAM / LAM_DEAD), then the decoder-cost grid of the submitted system.
 
-    python evaluate_metrica.py          # ~10 min
+    python evaluate_metrica.py          # ~1.5 h on a CPU (3 folds x (trees + N_SEEDS networks))
 """
 import os
 import sys
@@ -22,14 +23,17 @@ from possession import model, pipeline  # noqa: E402
 
 def main():
     sets = pipeline.metrica_sets()
-    oof = pipeline.cross_validate(sets)
+    oof_trees, oof_seq = pipeline.cross_validate(sets)
+    oof = {k: (oof_trees[k] + oof_seq[k]) / 2 for k in oof_trees}
+    lt, ld = pipeline.LAM_TEAM, pipeline.LAM_DEAD
     rows = []
     for (g, kind), p in oof.items():
         s = sets[(g, kind)]
         for system, lab in (("organisers' baseline (smooth50)", model.baseline_labels(s["F"], s["period"], 50)),
-                            ("frame classifier alone", model.argmax_labels(p, s["period"])),
-                            ("classifier + decoder (submitted)",
-                             model.decode(p, s["period"], pipeline.LAM_TEAM, pipeline.LAM_DEAD))):
+                            ("tree classifier alone (argmax)", model.argmax_labels(oof_trees[(g, kind)], s["period"])),
+                            ("trees + decoder (previous system)", model.decode(oof_trees[(g, kind)], s["period"], lt, ld)),
+                            ("sequence models + decoder", model.decode(oof_seq[(g, kind)], s["period"], lt, ld)),
+                            ("trees + sequence models + decoder (submitted)", model.decode(p, s["period"], lt, ld))):
             r = model.score(s["gt"], lab)
             rows.append({"game": g, "kind": kind, "system": system, "spellF1": r["spell_f1_mean"],
                          "macroF1": r["macro_f1"], "possessions": r["n_pred_spells"], "true": r["n_gt_spells"]})
